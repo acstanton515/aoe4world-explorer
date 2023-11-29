@@ -20,7 +20,18 @@ async function getComparer(unit: { name: string, civAbbr: civAbbr }) {
 };
 
 
-const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: any, setCivFilter: any}> = (props) => { //civFilter, setCivFilter 
+const CompareCard: Component<{ ally: any, enemy: any }> = (props) => {
+  return (
+    <div class="flex-auto flex flex-col gap-8">
+      <div class=" bg-black/70 rounded-2xl p-6 ">
+        <p>{props.ally().item.name} vs {props.enemy().item.name}</p>
+      </div>
+    </div>
+  );
+};
+
+
+const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: any, setCivFilter: any, unitClassFilter: any, setUnitClassFilter: any}> = (props) => { //civFilter, setCivFilter 
   const pending = useIsRouting();
   const navButtonClass =
     "w-12 h-10 md:w-10 lg:h-8 md:hover:bg-white md:hover:text-black bg-gray-900 text-white/70text-lg px-3 grid rounded-md flex-none transition";
@@ -63,141 +74,111 @@ const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: 
             <Icon icon="angle-right" />
           </button>
         </div>
+        <div class="mr-2 float-right">
+          <div class="relative">
+            <select
+              name="unitClassFilter1"
+              class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
+              onChange={(e) => {props.setUnitClassFilter(e.currentTarget.value + ' ' + props.unitClassFilter().split(' ')[1] + ' ' + props.unitClassFilter().split(' ')[2])}}
+            >
+              <option value="heavy_light">All</option>
+              <option selected value="_">None</option>
+              <option value="heavy">Heavy</option>
+              <option value="light">Light</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white-700">
+              <svg class="fill-current h-4 w-4" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z">
+                </path>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="mr-2 float-right">
+          <div class="relative">
+            <select
+              name="unitClassFilter2"
+              class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
+              onChange={(e) => {props.setUnitClassFilter(props.unitClassFilter().split(' ')[0] + ' ' + e.currentTarget.value + ' ' + props.unitClassFilter().split(' ')[2])}}
+            >
+              <option value="melee_ranged">All</option>
+              <option selected value="_">None</option>
+              <option value="melee">Melee</option>
+              <option value="ranged">Ranged</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white-700">
+              <svg class="fill-current h-4 w-4" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z">
+                </path>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="mr-2 float-right">
+          <div class="relative">
+            <select
+              name="unitClassFilter3"
+              class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
+              onChange={(e) => {props.setUnitClassFilter(props.unitClassFilter().split(' ')[0] + ' ' + props.unitClassFilter().split(' ')[1] + ' ' + e.currentTarget.value)}}
+            >
+              <option value="infantry_cavalry">All</option>
+              <option value="_">None</option>
+              <option selected value="infantry">Infantry</option>
+              <option value="cavalry">Cavalry</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white-700">
+              <svg class="fill-current h-4 w-4" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z">
+                </path>
+              </svg>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
+/*
+
+*/
 
 export const CompareRoute = () => {
   setHideNav(true);
   onCleanup(() => setHideNav(false));
   
-  const [show, setShow] = createSignal(false);
-  
-  const [allyAgeFilter, setAllyAgeFilter] = createSignal(4);
+  const [allyAgeFilter, setAllyAgeFilter] = createSignal(2);
+  const [allyUnitClassFilter, setAllyUnitClassFilter] = createSignal<string>('_ _ infantry');
   
   const [allyUnitFilter, setAllyUnitFilter] = createSignal<string>('spearman');
   const [allyCivFilter, setAllyCivFilter] = createSignal<civAbbr>('ab');
-  //const [ally] = createResource(() => getComparer("spearman", allyCivFilter);
   const derivedAllyUnit = createMemo(() => ({ name: allyUnitFilter(), civAbbr: allyCivFilter() }));
   const [ally] = createResource(derivedAllyUnit, getComparer);
 
 
-  const [enemyAgeFilter, setEnemyAgeFilter] = createSignal(4);
+  const [enemyAgeFilter, setEnemyAgeFilter] = createSignal(2);
+  const [enemyUnitClassFilter, setEnemyUnitClassFilter] = createSignal<string>('_ _ infantry');
   
   const [enemyUnitFilter, setEnemyUnitFilter] = createSignal<string>('archer');
   const [enemyCivFilter, setEnemyCivFilter] = createSignal<civAbbr>('de');
-  //const [enemy] = createResource(() => getComparer("horseman", enemyCivFilter);
   const derivedEnemyUnit = createMemo(() => ({ name: enemyUnitFilter(), civAbbr: enemyCivFilter() }));
   const [enemy] = createResource(derivedEnemyUnit, getComparer);
 
-  const compareProps: Partial<StatProperty[]> = [
-    "hitpoints",
-    "attackSpeed",
-    "moveSpeed",
-    "meleeAttack",
-    "meleeArmor",
-    "rangedAttack",
-    "rangedArmor",
-    "fireAttack",
-    "fireArmor",
-  ];
-  const netstats = createMemo(() =>
-    compareProps.reduce((acc, prop) => {
-      const att = calculateStatParts(ally()?.stats[prop], allyAgeFilter(), { target: enemy()?.item, decimals: 2 });
-      const def = calculateStatParts(enemy()?.stats[prop], enemyAgeFilter(), { target: ally()?.item, decimals: 2 });
 
-      acc[prop] = { diff: att.total + att.bonus - def.total + def.bonus, ally: att, enemy: def };
-      return acc;
-    }, {} as Record<StatProperty, { diff: number; ally: CalculatedStats; enemy: CalculatedStats }>)
-  );
-
-  const attackTypes = ["melee", "ranged", "fire", "siege"] as const;
-
-  const results = createMemo(() => {
-    const attacks = attackTypes.reduce(
-      (acc, type) => {
-        const damage = netstats()?.[`${type}Attack`];
-        const armor = netstats()?.[`${type}Armor`];
-        acc.ally[type] = damage?.ally.max ? Math.round(Math.max(1, damage.ally.max - armor.enemy.max)) : 0;
-        acc.enemy[type] = damage?.enemy.max ? Math.round(Math.max(1, damage.enemy.max - armor.ally.max)) : 0;
-        return acc;
-      },
-      { ally: {}, enemy: {} } as Record<"ally" | "enemy", Record<typeof attackTypes[number], number>>
-    );
-
-    const [allyAttack, allyDamage] = Object.entries(attacks.ally).find(([key, value]) => value > 0) || ["", 0];
-    const [enemyAttack, enemyDamage] = Object.entries(attacks.enemy).find(([key, value]) => value > 0) || ["", 0];
-
-    const allyAttacksNeed = Math.ceil(netstats().hitpoints.enemy.max / allyDamage),
-      enemyAttacksNeed = Math.ceil(netstats().hitpoints.ally.max / enemyDamage),
-      allyAttackSpeed = netstats().attackSpeed.ally.max,
-      enemyAttackSpeed = netstats().attackSpeed.enemy.max,
-      allyTimeNeed = allyAttacksNeed * allyAttackSpeed,
-      enemyTimeNeed = enemyAttacksNeed * enemyAttackSpeed,
-      allyHealthLeft = Math.max(0, netstats().hitpoints.ally.max - Math.floor(allyTimeNeed / enemyAttackSpeed) * enemyDamage),
-      enemyHealthLeft = Math.max(0, netstats().hitpoints.enemy.max - Math.floor(enemyTimeNeed / allyAttackSpeed) * allyDamage);
-
-    const winner = allyTimeNeed < enemyTimeNeed ? "ally" : "enemy";
-    return {
-      ally: {
-        attack: allyAttack,
-        damage: allyDamage,
-        attackSpeed: allyAttackSpeed,
-        attacksNeeded: allyAttacksNeed,
-        timeNeeded: allyTimeNeed,
-        hpLeft: allyHealthLeft,
-      },
-      enemy: {
-        attack: enemyAttack,
-        damage: enemyDamage,
-        attackSpeed: enemyAttackSpeed,
-        attacksNeeded: enemyAttacksNeed,
-        timeNeeded: enemyTimeNeed,
-        hpLeft: enemyHealthLeft,
-      },
-      winner: winner,
-    };
-  });
-  
+  //            <p>{allyUnitClassFilter} and {enemyUnitClassFilter}</p>
   return (
     <>
-      <CompareToolbar player="You  " ageFilter={allyAgeFilter} setAgeFilter={setAllyAgeFilter} setCivFilter={setAllyCivFilter}></CompareToolbar>
-      <CompareToolbar player="Enemy" ageFilter={enemyAgeFilter} setAgeFilter={setEnemyAgeFilter} setCivFilter={setEnemyCivFilter}></CompareToolbar>
+      <CompareToolbar player="P1" ageFilter={allyAgeFilter} setAgeFilter={setAllyAgeFilter} setCivFilter={setAllyCivFilter} unitClassFilter={allyUnitClassFilter} setUnitClassFilter={setAllyUnitClassFilter}></CompareToolbar>
+      <CompareToolbar player="P2" ageFilter={enemyAgeFilter} setAgeFilter={setEnemyAgeFilter} setCivFilter={setEnemyCivFilter} unitClassFilter={enemyUnitClassFilter} setUnitClassFilter={setEnemyUnitClassFilter}></CompareToolbar>
     
       <div class="max-w-screen-lg p-4 mx-auto">
         <div class="flex gap-4">
-          <Show when={!ally.loading && !enemy.loading && results()}>
+          <Show when={!ally.loading && !enemy.loading}>
             <div class="flex-auto flex flex-col gap-4">
-              <p>
-                The resulting {results().ally.attack} attack is {results().ally.damage} damage every {results().ally.attackSpeed}s so {ally().item.name} needs{" "}
-                {results().ally.attacksNeeded} attacks and {results().ally.timeNeeded} seconds to kill {enemy().item.name} and has {results().ally.hpLeft} HP
-                left.
-              </p>
-              <div>
-                <pre>{JSON.stringify(results().ally, null, 2)}</pre>
-                <pre>{JSON.stringify(results().ally, null, 2)}</pre>
-              </div>
-              {netstats().moveSpeed.ally.max > netstats().moveSpeed.enemy.max && <p>+ Can outrun/kite {enemy().item.name}</p>}
               <UnitCard unit={ally().item} civ={ally().civ}></UnitCard>
             </div>
+            <CompareCard ally={ally} enemy={enemy}></CompareCard>
             <div class="flex-auto">
-              {results().winner === "ally" ? ally().item.name + " wins!" : enemy().item.name + " wins!"}
-              <br />
-            </div>
-            <div class="flex-auto">
-              <p>
-                The resulting {results().enemy.attack} attack is {results().enemy.damage} damage every {results().enemy.attackSpeed}s so {enemy().item.name}{" "}
-                needs {results().enemy.attacksNeeded} attacks and {results().enemy.timeNeeded} seconds to kill {ally().item.name} and has{" "}
-                {results().enemy.hpLeft} HP left.
-              </p>
-              <p>{}</p>
-              <div>
-                <pre>{JSON.stringify(results().ally, null, 2)}</pre>
-                <pre>{JSON.stringify(results().enemy, null, 2)}</pre>
-              </div>
-              {netstats().moveSpeed.enemy.max > netstats().moveSpeed.ally.max && <p>+ Can outrun/kite {ally().item.name}</p>}
               <UnitCard unit={enemy().item} civ={enemy().civ}></UnitCard>
             </div>
           </Show>

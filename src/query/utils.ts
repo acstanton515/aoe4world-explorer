@@ -81,6 +81,16 @@ export function getMostAppropriateVariation<T extends Item = Item>(item: Unified
   );
 }
 
+//get a list of units that match a list of classes
+export function getUnitsByClass(units: UnifiedItem<Unit>[], unitClasses: []) {
+  return units?.reduce((acc, unit) => {  
+    let classMatch = true;
+    unitClasses.forEach((e) => {if(!unit.classes.some((c) => e.includes(c))) classMatch=false});
+    if (classMatch) acc.push(unit);
+    return acc;
+  }, [] as UnifiedItem<Unit>[]);
+}
+
 export function splitUnitsIntoGroups(units: UnifiedItem<Unit>[]) {
   const grouped = units?.reduce(
     (acc, unit) => {

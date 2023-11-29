@@ -4,7 +4,7 @@ import { StatBar } from "../components/Stats";
 import { globalAgeFilter, hideNav, setHideNav } from "../global";
 import { UnitCard } from "../components/UnitCard";
 import { CIVILIZATIONS, ITEMS } from "../config";
-import { findClosestMatch } from "../query/utils";
+import { findClosestMatch, getUnitsByClass } from "../query/utils";
 import { calculateStatParts, getUnitStats } from "../query/stats";
 import { modifierMatches } from "../query/utils";
 import { civAbbr, Item, Modifier, Unit } from "../types/data";
@@ -19,6 +19,11 @@ async function getComparer(unit: { name: string, civAbbr: civAbbr }) {
   return { item, stats, civ };
 };
 
+async function getUnits(units: { classes: string, civAbbr: civAbbr }) {
+  const civ = (await import("@data/sdk")).civilizations.Get(units.civAbbr);
+  const classList = units.classes.replaceAll('_','').trim().replaceAll('  ',' ').split(' ');
+  return getUnitsByClass(civ.units, classList);
+};
 
 const CompareCard: Component<{ ally: any, enemy: any }> = (props) => {
   return (
@@ -81,8 +86,7 @@ const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: 
               class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
               onChange={(e) => {props.setUnitClassFilter(e.currentTarget.value + ' ' + props.unitClassFilter().split(' ')[1] + ' ' + props.unitClassFilter().split(' ')[2])}}
             >
-              <option value="heavy_light">All</option>
-              <option selected value="_">None</option>
+              <option selected value="_">All</option>
               <option value="heavy">Heavy</option>
               <option value="light">Light</option>
             </select>
@@ -101,8 +105,7 @@ const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: 
               class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
               onChange={(e) => {props.setUnitClassFilter(props.unitClassFilter().split(' ')[0] + ' ' + e.currentTarget.value + ' ' + props.unitClassFilter().split(' ')[2])}}
             >
-              <option value="melee_ranged">All</option>
-              <option selected value="_">None</option>
+              <option selected value="_">All</option>
               <option value="melee">Melee</option>
               <option value="ranged">Ranged</option>
             </select>
@@ -121,10 +124,12 @@ const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: 
               class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
               onChange={(e) => {props.setUnitClassFilter(props.unitClassFilter().split(' ')[0] + ' ' + props.unitClassFilter().split(' ')[1] + ' ' + e.currentTarget.value)}}
             >
-              <option value="infantry_cavalry">All</option>
-              <option value="_">None</option>
+              <option value="infantry|cavalry">Units</option>
+              <option value="_">All</option>
               <option selected value="infantry">Infantry</option>
               <option value="cavalry">Cavalry</option>
+              <option value="siege">Siege Units</option>
+              <option value="ships">Ship Units</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white-700">
               <svg class="fill-current h-4 w-4" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -152,6 +157,10 @@ export const CompareRoute = () => {
   
   const [allyUnitFilter, setAllyUnitFilter] = createSignal<string>('spearman');
   const [allyCivFilter, setAllyCivFilter] = createSignal<civAbbr>('ab');
+  
+  const derivedAllyUnits = createMemo(() => ({ classes: allyUnitClassFilter(), civAbbr: allyCivFilter() }));
+  const [allyUnits] = createResource(derivedAllyUnits, getUnits);
+  
   const derivedAllyUnit = createMemo(() => ({ name: allyUnitFilter(), civAbbr: allyCivFilter() }));
   const [ally] = createResource(derivedAllyUnit, getComparer);
 
@@ -178,6 +187,9 @@ export const CompareRoute = () => {
               <UnitCard unit={ally().item} civ={ally().civ}></UnitCard>
             </div>
             <CompareCard ally={ally} enemy={enemy}></CompareCard>
+            <div>
+              <pre>{JSON.stringify(allyUnits(), null, 2)}</pre>
+            </div>
             <div class="flex-auto">
               <UnitCard unit={enemy().item} civ={enemy().civ}></UnitCard>
             </div>

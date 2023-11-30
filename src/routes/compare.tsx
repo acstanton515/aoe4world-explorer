@@ -12,6 +12,9 @@ import { CalculatedStats, Stat, StatProperty } from "../types/stats";
 import { CivFlag } from "../components/CivFlag";
 import { Icon } from "../components/Icon";
 
+//may not use later
+import { ItemIcon } from "../components/ItemIcon";
+
 async function getComparer(unit: { name: string, civAbbr: civAbbr }) {
   const civ = CIVILIZATIONS[unit.civAbbr];
   const item = await findClosestMatch(ITEMS.UNITS, unit.name, civ);
@@ -19,18 +22,18 @@ async function getComparer(unit: { name: string, civAbbr: civAbbr }) {
   return { item, stats, civ };
 };
 
-async function getUnits(units: { classes: string, civAbbr: civAbbr }) {
+async function getUnits(units: { classes: string, civAbbr: civAbbr, unitCount: any }) {
   const civ = (await import("@data/sdk")).civilizations.Get(units.civAbbr);
   const classList = units.classes.replaceAll('_','').trim().replaceAll('  ',' ').split(' ');
-  return getUnitsByClass(civ.units, classList);
+  const results = getUnitsByClass(civ.units, classList);
+  units.unitCount(results.length);
+  return results;
 };
 
 const CompareCard: Component<{ ally: any, enemy: any }> = (props) => {
   return (
-    <div class="flex-auto flex flex-col gap-8">
-      <div class=" bg-black/70 rounded-2xl p-6 ">
-        <p>{props.ally().item.name} vs {props.enemy().item.name}</p>
-      </div>
+    <div class="w-48 h-48 shadow-lg aspect-w-1 aspect-h-1 rounded-xl text-xs">
+      <p>{props.ally.name} vs {props.enemy.name}</p>
     </div>
   );
 };
@@ -124,12 +127,12 @@ const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: 
               class="text-white appearance-none block w-full bg-black pl-6 pr-7 py-3 placeholder-gray-900 rounded-md focus:outline-none"
               onChange={(e) => {props.setUnitClassFilter(props.unitClassFilter().split(' ')[0] + ' ' + props.unitClassFilter().split(' ')[1] + ' ' + e.currentTarget.value)}}
             >
-              <option value="infantry|cavalry">Units</option>
-              <option value="_">All</option>
               <option selected value="infantry">Infantry</option>
               <option value="cavalry">Cavalry</option>
+              <option value="infantry|cavalry">Inf or Cav</option>
               <option value="siege">Siege Units</option>
               <option value="ships">Ship Units</option>
+              <option value="infantry|cavalry|siege|ships">All</option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white-700">
               <svg class="fill-current h-4 w-4" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
@@ -152,47 +155,91 @@ export const CompareRoute = () => {
   setHideNav(true);
   onCleanup(() => setHideNav(false));
   
+  //ally input signals
   const [allyAgeFilter, setAllyAgeFilter] = createSignal(2);
   const [allyUnitClassFilter, setAllyUnitClassFilter] = createSignal<string>('_ _ infantry');
-  
-  const [allyUnitFilter, setAllyUnitFilter] = createSignal<string>('spearman');
+  const [allyUnitCount, setAllyUnitCount] = createSignal(0);
   const [allyCivFilter, setAllyCivFilter] = createSignal<civAbbr>('ab');
   
-  const derivedAllyUnits = createMemo(() => ({ classes: allyUnitClassFilter(), civAbbr: allyCivFilter() }));
+  //ally derived signals and resource
+  const derivedAllyUnits = createMemo(() => ({ classes: allyUnitClassFilter(), civAbbr: allyCivFilter(), unitCount: setAllyUnitCount }));
   const [allyUnits] = createResource(derivedAllyUnits, getUnits);
-  
-  const derivedAllyUnit = createMemo(() => ({ name: allyUnitFilter(), civAbbr: allyCivFilter() }));
-  const [ally] = createResource(derivedAllyUnit, getComparer);
 
-
+  //enemy input signals
   const [enemyAgeFilter, setEnemyAgeFilter] = createSignal(2);
   const [enemyUnitClassFilter, setEnemyUnitClassFilter] = createSignal<string>('_ _ infantry');
-  
-  const [enemyUnitFilter, setEnemyUnitFilter] = createSignal<string>('archer');
+  const [enemyUnitCount, setEnemyUnitCount] = createSignal(0);
   const [enemyCivFilter, setEnemyCivFilter] = createSignal<civAbbr>('de');
-  const derivedEnemyUnit = createMemo(() => ({ name: enemyUnitFilter(), civAbbr: enemyCivFilter() }));
-  const [enemy] = createResource(derivedEnemyUnit, getComparer);
+  
+  //enemy derived signals and resource
+  const derivedEnemyUnits = createMemo(() => ({ classes: enemyUnitClassFilter(), civAbbr: enemyCivFilter(), unitCount: setEnemyUnitCount }));
+  const [enemyUnits] = createResource(derivedEnemyUnits, getUnits);
 
-
-  //            <p>{allyUnitClassFilter} and {enemyUnitClassFilter}</p>
   return (
     <>
-      <CompareToolbar player="P1" ageFilter={allyAgeFilter} setAgeFilter={setAllyAgeFilter} setCivFilter={setAllyCivFilter} unitClassFilter={allyUnitClassFilter} setUnitClassFilter={setAllyUnitClassFilter}></CompareToolbar>
-      <CompareToolbar player="P2" ageFilter={enemyAgeFilter} setAgeFilter={setEnemyAgeFilter} setCivFilter={setEnemyCivFilter} unitClassFilter={enemyUnitClassFilter} setUnitClassFilter={setEnemyUnitClassFilter}></CompareToolbar>
-    
-      <div class="max-w-screen-lg p-4 mx-auto">
-        <div class="flex gap-4">
-          <Show when={!ally.loading && !enemy.loading}>
-            <div class="flex-auto flex flex-col gap-4">
-              <UnitCard unit={ally().item} civ={ally().civ}></UnitCard>
+      <CompareToolbar 
+        player="P1" 
+        ageFilter={allyAgeFilter} 
+        setAgeFilter={setAllyAgeFilter} 
+        setCivFilter={setAllyCivFilter} 
+        unitClassFilter={allyUnitClassFilter} 
+        setUnitClassFilter={setAllyUnitClassFilter}
+      >
+      </CompareToolbar>
+      <CompareToolbar 
+        player="P2" 
+        ageFilter={enemyAgeFilter} 
+        setAgeFilter={setEnemyAgeFilter} 
+        setCivFilter={setEnemyCivFilter} 
+        unitClassFilter={enemyUnitClassFilter} 
+        setUnitClassFilter={setEnemyUnitClassFilter}
+      >
+      </CompareToolbar>
+      <div class="max-w-screen-2xl p-4 mx-auto">
+        <div class={`grid grid-cols-${enemyUnitCount()+1} gap-1`}>
+          <Show when={!allyUnits.loading && !enemyUnits.loading}>
+            <div class="flex-nowrap rounded-md w-24 h-24 p-1 bg-item-unit">
+              <div class="rounded-md w-8 h-8">
+                <CivFlag abbr={allyCivFilter()} class="h-full w-full object-cover" />
+              </div>
+              <div class="w-8 h-8">
+                <p>vs</p>
+              </div>
+              <div class="rounded-md w-8 h-8">
+                <CivFlag abbr={enemyCivFilter()} class="h-full w-full object-cover" />
+              </div>
             </div>
-            <CompareCard ally={ally} enemy={enemy}></CompareCard>
-            <div>
-              <pre>{JSON.stringify(allyUnits(), null, 2)}</pre>
-            </div>
-            <div class="flex-auto">
-              <UnitCard unit={enemy().item} civ={enemy().civ}></UnitCard>
-            </div>
+            <For each={Object.values(enemyUnits())}>
+              {(enemyUnit) => (
+                <div class="flex-none self-start rounded-md w-24 h-24 p-1 bg-item-unit">
+                  <ItemIcon url={enemyUnit.icon} />
+                </div>
+              )}
+            </For>
+            <For each={Object.values(allyUnits())}>
+              {(allyUnit) => (
+                <>
+                  <div class="flex-none self-start rounded-md w-24 h-24 p-1 bg-item-unit">
+                    <ItemIcon url={allyUnit.icon} />
+                  </div>
+                  <For each={Object.values(enemyUnits())}>
+                    {(enemyUnit) => (
+                      <div class="flex-none self-start rounded-md w-24 h-24 p-1 bg-item-unit">
+                        <div class="rounded-md w-8 h-8">
+                          <ItemIcon url={allyUnit.icon} />
+                        </div>  
+                        <div class="w-8 h-8">
+                          <p>vs</p>
+                        </div>
+                        <div class="rounded-md w-8 h-8">
+                          <ItemIcon url={enemyUnit.icon} />
+                        </div>
+                      </div>
+                    )}
+                  </For>
+                </>
+              )}
+            </For>
           </Show>
         </div>
       </div>

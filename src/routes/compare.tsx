@@ -1,19 +1,21 @@
 import { Link, NavLink, useIsRouting, useLocation } from "@solidjs/router";
 import { Component, createMemo, createResource, createSignal, Show, Suspense, onCleanup, For } from "solid-js";
-import { StatBar } from "../components/Stats";
+import { StatIconNumber, StatCostsBrief, StatDps, StatNumber } from "../components/Stats";
 import { globalAgeFilter, hideNav, setHideNav } from "../global";
 import { UnitCard } from "../components/UnitCard";
 import { CIVILIZATIONS, ITEMS } from "../config";
-import { findClosestMatch, getUnitsByClass } from "../query/utils";
+import { findClosestMatch, getUnitsByClassAge } from "../query/utils";
 import { calculateStatParts, getUnitStats } from "../query/stats";
 import { modifierMatches } from "../query/utils";
-import { civAbbr, Item, Modifier, Unit } from "../types/data";
+import { civAbbr, civConfig, Item, Modifier, Unit, UnifiedItem } from "../types/data";
 import { CalculatedStats, Stat, StatProperty } from "../types/stats";
 import { CivFlag } from "../components/CivFlag";
 import { Icon } from "../components/Icon";
 
-//may not use later
+//new imports to determine permancy
 import { ItemIcon } from "../components/ItemIcon";
+import { ItemPage } from "../components/ItemPage";
+import { getMostAppropriateVariation } from "../query/utils";
 
 async function getComparer(unit: { name: string, civAbbr: civAbbr }) {
   const civ = CIVILIZATIONS[unit.civAbbr];
@@ -22,13 +24,59 @@ async function getComparer(unit: { name: string, civAbbr: civAbbr }) {
   return { item, stats, civ };
 };
 
-async function getUnits(units: { classes: string, civAbbr: civAbbr, unitCount: any }) {
+async function getUnits(units: { classes: string, civAbbr: civAbbr, age : any, unitCount: any }) {
   const civ = (await import("@data/sdk")).civilizations.Get(units.civAbbr);
   const classList = units.classes.replaceAll('_','').trim().replaceAll('  ',' ').split(' ');
-  const results = getUnitsByClass(civ.units, classList);
+  const results = getUnitsByClassAge(civ.units, classList, units.age);
   units.unitCount(results.length);
   return results;
 };
+
+
+const UnitHeader: Component<{ item?: UnifiedItem<Unit>; civ: civConfig; age: () => number }> = (props) => {
+  const [stats] = createResource(
+    () => ({ unit: props.item, civ: props.civ }),
+    (x) => getUnitStats(ITEMS.UNITS, x.unit, x.civ)
+  );
+  const variation = createMemo(() => getMostAppropriateVariation<Unit>(props.item, props.civ));
+
+
+  //<ItemPage.AgeTabs age={age} setAge={setAge} minAge={props.item.minAge} /> // took age out
+  return (
+    <div class="rounded-md w-48 h-64 p-1 bg-item-unit">
+      <div class="inline-flex">
+        <CivFlag abbr={props.civ.abbr} class="relative w-12 h-12 rounded-md border-2 shadow-inner border-transparent xl:block transition" />
+        <ItemIcon url={props.item.icon} class="relative w-12 h-12 rounded-md border-2 shadow-inner border-transparent xl:block transition" />
+      </div>
+      <StatCostsBrief costs={variation().costs} />
+      <Show when={stats()} keyed>
+        {(stats) => (
+          <>
+            <div class="inline-flex gap-2">
+              <StatIconNumber label="Hitpoints" icon="heart" stat={stats.hitpoints} max={1000} item={props.item} age={props.age} />
+              <StatIconNumber label="Movement Speed" icon="person-running-fast" stat={stats.moveSpeed} item={props.item} age={props.age} />
+              <StatIconNumber label="Line of Sight" icon="eyes" stat={stats.lineOfSight} item={props.item} age={props.age} />
+            </div>
+            <br/>
+            <div class="inline-flex gap-2">
+              <StatIconNumber label="Melee Armor" icon="shield-blank" stat={stats.meleeArmor} displayAlways={true} item={props.item} age={props.age} />
+              <StatIconNumber label="Ranged Armor" icon="bullseye-arrow" stat={stats.rangedArmor} displayAlways={true} item={props.item} age={props.age} />
+            </div>
+            <br/>
+            <div class="inline-flex gap-2">
+              <StatIconNumber label="Siege Attack" icon="meteor" stat={stats.siegeAttack} multiplier={stats.burst} item={props.item} age={props.age} />
+              <StatIconNumber label="Melee Attack" icon="swords" stat={stats.meleeAttack} item={props.item} age={props.age} />
+              <StatIconNumber label="Ranged Attack" icon="bow-arrow" stat={stats.rangedAttack} multiplier={stats.burst} item={props.item} age={props.age} />
+              <StatIconNumber label="Attack Speed" icon="gauge" stat={stats.attackSpeed} item={props.item} age={props.age} />
+              <StatIconNumber label="Range" icon="arrows-up-down-left-right" stat={stats.maxRange} item={props.item} age={props.age}></StatIconNumber>
+            </div>
+          </>
+        )}
+      </Show>
+    </div>
+  );
+};
+
 
 const CompareCard: Component<{ ally: any, enemy: any }> = (props) => {
   return (
@@ -37,7 +85,6 @@ const CompareCard: Component<{ ally: any, enemy: any }> = (props) => {
     </div>
   );
 };
-
 
 const CompareToolbar: Component<{ player: string, ageFilter: any, setAgeFilter: any, setCivFilter: any, unitClassFilter: any, setUnitClassFilter: any}> = (props) => { //civFilter, setCivFilter 
   const pending = useIsRouting();
@@ -162,8 +209,9 @@ export const CompareRoute = () => {
   const [allyCivFilter, setAllyCivFilter] = createSignal<civAbbr>('ab');
   
   //ally derived signals and resource
-  const derivedAllyUnits = createMemo(() => ({ classes: allyUnitClassFilter(), civAbbr: allyCivFilter(), unitCount: setAllyUnitCount }));
+  const derivedAllyUnits = createMemo(() => ({ classes: allyUnitClassFilter(), civAbbr: allyCivFilter(), age: allyAgeFilter(), unitCount: setAllyUnitCount }));
   const [allyUnits] = createResource(derivedAllyUnits, getUnits);
+  //const [allFirstUnitStats] = createResource(() => getUnitStats(ITEMS.UNITS, allyUnits[0], CIVILIZATIONS[enemyCivFilter()]));
 
   //enemy input signals
   const [enemyAgeFilter, setEnemyAgeFilter] = createSignal(2);
@@ -172,9 +220,10 @@ export const CompareRoute = () => {
   const [enemyCivFilter, setEnemyCivFilter] = createSignal<civAbbr>('de');
   
   //enemy derived signals and resource
-  const derivedEnemyUnits = createMemo(() => ({ classes: enemyUnitClassFilter(), civAbbr: enemyCivFilter(), unitCount: setEnemyUnitCount }));
+  const derivedEnemyUnits = createMemo(() => ({ classes: enemyUnitClassFilter(), civAbbr: enemyCivFilter(), age: enemyAgeFilter(), unitCount: setEnemyUnitCount }));
   const [enemyUnits] = createResource(derivedEnemyUnits, getUnits);
 
+  //const stats = await getUnitStats(ITEMS.UNITS, item, civ);
   return (
     <>
       <CompareToolbar 
@@ -195,43 +244,43 @@ export const CompareRoute = () => {
         setUnitClassFilter={setEnemyUnitClassFilter}
       >
       </CompareToolbar>
-      <div class="max-w-screen-2xl p-4 mx-auto">
+      <div class="max-w-screen-2xl p-4 mx-auto overflow-x-auto">
         <div class={`grid grid-cols-${enemyUnitCount()+1} gap-1`}>
           <Show when={!allyUnits.loading && !enemyUnits.loading}>
-            <div class="flex-nowrap rounded-md w-24 h-24 p-1 bg-item-unit">
-              <div class="rounded-md w-8 h-8">
-                <CivFlag abbr={allyCivFilter()} class="h-full w-full object-cover" />
+            <div class="inline-flex rounded-md w-48 h-64 p-1 bg-item-unit">
+              <div class="rounded-md w-12 h-12">
+                <CivFlag abbr={allyCivFilter()} class="relative w-12 h-12 rounded-md overflow-hidden border-2 shadow-inner   border-transparent xl:block transition" />
               </div>
               <div class="w-8 h-8">
                 <p>vs</p>
               </div>
-              <div class="rounded-md w-8 h-8">
-                <CivFlag abbr={enemyCivFilter()} class="h-full w-full object-cover" />
+              <div class="rounded-md w-12 h-12">
+                <CivFlag abbr={enemyCivFilter()} class="relative w-12 h-12 rounded-md overflow-hidden border-2 shadow-inner   border-transparent xl:block transition" />
               </div>
             </div>
             <For each={Object.values(enemyUnits())}>
               {(enemyUnit) => (
-                <div class="flex-none self-start rounded-md w-24 h-24 p-1 bg-item-unit">
-                  <ItemIcon url={enemyUnit.icon} />
-                </div>
+                <>
+                  <UnitHeader item={enemyUnit} civ={CIVILIZATIONS[enemyCivFilter()]} age={enemyAgeFilter} />
+                </>
               )}
             </For>
             <For each={Object.values(allyUnits())}>
               {(allyUnit) => (
                 <>
-                  <div class="flex-none self-start rounded-md w-24 h-24 p-1 bg-item-unit">
-                    <ItemIcon url={allyUnit.icon} />
+                  <div class="inline-flex self-start rounded-md w-48 h-64 p-1 bg-item-unit">
+                    <UnitHeader item={allyUnit} civ={CIVILIZATIONS[allyCivFilter()]} age={allyAgeFilter} />
                   </div>
                   <For each={Object.values(enemyUnits())}>
                     {(enemyUnit) => (
-                      <div class="flex-none self-start rounded-md w-24 h-24 p-1 bg-item-unit">
-                        <div class="rounded-md w-8 h-8">
+                      <div class="inline-flex self-start rounded-md w-48 h-64 p-1 bg-item-unit">
+                        <div class="rounded-md w-12 h-12">
                           <ItemIcon url={allyUnit.icon} />
                         </div>  
                         <div class="w-8 h-8">
                           <p>vs</p>
                         </div>
-                        <div class="rounded-md w-8 h-8">
+                        <div class="rounded-md w-12 h-12">
                           <ItemIcon url={enemyUnit.icon} />
                         </div>
                       </div>

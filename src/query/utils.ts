@@ -82,11 +82,14 @@ export function getMostAppropriateVariation<T extends Item = Item>(item: Unified
 }
 
 //get a list of units that match a list of classes
-export function getUnitsByClass(units: UnifiedItem<Unit>[], unitClasses: []) {
+export function getUnitsByClassAge(units: UnifiedItem<Unit>[], unitClasses: [], minAge: any ) {
   return units?.reduce((acc, unit) => {  
-    let classMatch = true;
-    unitClasses.forEach((e) => {if(!unit.classes.some((c) => e.includes(c))) classMatch=false});
-    if (classMatch) acc.push(unit);
+    let unitMatch = true;
+    unitClasses.forEach((e) => {if(!unit.classes.some((c) => e.includes(c))) unitMatch=false});
+    if(unit.variations.every((c) => c.age > minAge)) unitMatch=false;
+    //if (unit.age > minAge) unitMatch=false;
+    //if (unit.name == "Man-at-Arms") console.log(unit);
+    if (unitMatch) acc.push(unit);
     return acc;
   }, [] as UnifiedItem<Unit>[]);
 }

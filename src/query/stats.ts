@@ -79,7 +79,7 @@ function mergeVariationsToStats(variations: (Unit | Building)[]) {
 
         if (w.burst) stats.burst = w.burst.count;
 
-        if (w.type == "siege" || w.type == "ranged") {
+        if (w.type == "siege" || w.type == "ranged" || w.type == "melee") {
           stats.maxRange = w.range.max;
           stats.minRange = w.range.min;
         }

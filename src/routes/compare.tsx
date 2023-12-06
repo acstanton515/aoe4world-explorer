@@ -32,6 +32,151 @@ async function getUnits(units: { classes: string, civAbbr: civAbbr, age : any, u
   return results;
 };
 
+async function getCompareUnitStats(units: { ally: UnifiedItem<Unit>, allyCiv: civConfig, allyAge: () => number, enemy: UnifiedItem<Unit>, enemyCiv: civConfig, enemyAge: () => number}) {
+  const allyStats = await getUnitStats(ITEMS.UNITS, units.ally, units.allyCiv);
+  const enemyStats = await getUnitStats(ITEMS.UNITS, units.enemy, units.enemyCiv);
+  
+  const compareProps: Partial<StatProperty[]> = [
+      "hitpoints",
+      "attackSpeed",
+      "moveSpeed",
+      "meleeAttack",
+      "meleeArmor",
+      "rangedAttack",
+      "rangedArmor",
+      "fireAttack",
+      "fireArmor",
+      "maxRange",
+    ];
+  
+  return compareProps.reduce((acc, accProp) => {
+    const allyStatParts = calculateStatParts(allyStats[accProp], units.allyAge(), { target: units.enemy, decimals: 3 });
+    const enemyStatParts = calculateStatParts(enemyStats[accProp], units.enemyAge(), { target: units.ally, decimals: 3 });
+    
+    acc[accProp] = {diff: allyStatParts.total + allyStatParts.bonus - enemyStatParts.total + enemyStatParts.bonus, ally: allyStatParts, enemy: enemyStatParts };
+    return acc;
+  }, {} as Record<StatProperty, { diff: number; ally: CalculatedStats; enemy: CalculatedStats }>);
+};
+
+type UnitSim = {
+  unit: string,
+  hitpoints: number[],
+  position: number,
+  lastAttackTime: number,
+  moving: boolean,
+};
+
+function moveSimulation(time: number, gameTick: number, compareUnitStats: any, allyUnits: any, enemyUnits: any) {
+  let doesAllyMove = false;
+  let doesEnemyMove = false;
+  
+  //check if ally and enemy need to move
+  if (Math.abs(allyUnits.position - enemyUnits.position) >= compareUnitStats().maxRange[allyUnits['unit']].total)
+    doesAllyMove = true; 
+  if (Math.abs(enemyUnits.position - allyUnits.position) >= compareUnitStats().maxRange[enemyUnits['unit']].total)
+    doesEnemyMove = true; 
+  
+  //move
+  if (doesAllyMove)
+    allyUnits.position += gameTick * compareUnitStats().moveSpeed[allyUnits['unit']].total;
+  if (doesEnemyMove)
+    enemyUnits.position -= gameTick * compareUnitStats().moveSpeed[allyUnits['unit']].total;
+};
+
+function attackSimulation(time: number, compareUnitStats: any, attackUnits: any, defendUnits: any) {
+  if (Math.abs(attackUnits.position - defendUnits.position) <= compareUnitStats().maxRange[attackUnits['unit']].total) {
+    attackUnits.moving = false; //does this need to be here
+    if ((time-attackUnits.lastAttackTime) >= compareUnitStats().attackSpeed[attackUnits['unit']].total) {
+      attackUnits.lastAttackTime = time;
+      attackUnits.forEach((e,i) => {
+        defendUnits.hitpoints[Math.floor(i/3)%defendUnits.length] -= 
+          Math.max(
+            compareUnitStats().meleeAttack[attackUnits['unit']].total + 
+            compareUnitStats().meleeAttack[attackUnits['unit']].bonus - 
+            compareUnitStats().meleeArmor[defendUnits['unit']].total,
+            1);
+      });
+    }
+  }
+  else
+    attackUnits.moving = true; //reset to true??? if add kiting support
+};
+
+function deathSimulation(units: any) {
+  units.hitpoints = units.hitpoints.filter((e) => e <= 0.0);
+};
+
+function compareSimulation(compareUnitStats: any, allyUnitCount: number, enemyUnitCount: number) {
+
+  let time = 0.0;
+  const gameTick = 0.125;
+
+  let allyUnits: UnitSim = {
+    unit: "ally",
+    hitpoints: Array(allyUnitCount).fill(50), //compareUnitStats().hitpoints.ally.total
+    position: 0.0,
+    lastAttackTime: 0.0,
+    moving: true,
+  };
+  
+  let enemyUnits: UnitSim = {
+    unit: "enemy",
+    hitpoints: Array(allyUnitCount).fill(50), //compareUnitStats().hitpoints.enemy.total
+    position: 20.0,
+    lastAttackTime: 0.0,
+    moving: true,
+  };
+  
+  while(true) {
+    console.log(allyUnits, enemyUnits)
+    if (!allyUnits.hitpoints.length || !enemyUnits.hitpoints.length)
+      return { ally: allyUnits, enemy: enemyUnits, time: time };
+    attackSimulation(time,compareUnitStats, allyUnits, enemyUnits);
+    attackSimulation(time,compareUnitStats, enemyUnits, allyUnits);
+    console.log(allyUnits, enemyUnits)
+    moveSimulation(time,gameTick,compareUnitStats,allyUnits,enemyUnits);
+    console.log(allyUnits, enemyUnits)
+    deathSimulation(allyUnits);
+    deathSimulation(enemyUnits);
+    time = time + gameTick;
+  }
+};
+
+
+const CompareCard: Component<{ ally: UnifiedItem<Unit>, allyCiv: civConfig, allyAge: () => number, enemy: UnifiedItem<Unit>, enemyCiv: civConfig, enemyAge: () => number}> = (props) => {
+  
+  const derivedCompareUnits = createMemo(() => ({ ally: props.ally, allyCiv: props.allyCiv, allyAge: props.allyAge, enemy: props.enemy, enemyCiv: props.enemyCiv, enemyAge: props.enemyAge }));
+  const [compareUnitStats] = createResource(derivedCompareUnits, getCompareUnitStats);
+  
+  return (
+    <div class="rounded-md w-48 h-64 p-1 bg-item-unit">
+      <div class="inline-flex">
+        <div class="rounded-md w-12 h-12">
+          <ItemIcon url={props.ally.icon} />
+        </div>  
+        <div class="w-8 h-8">
+          <p>vs</p>
+        </div>
+        <div class="rounded-md w-12 h-12">
+          <ItemIcon url={props.enemy.icon} />
+        </div>
+      </div>
+      <Show when={!compareUnitStats.loading}>
+        <>
+          <p>{`${compareUnitStats().rangedAttack.ally.total+compareUnitStats().rangedAttack.ally.bonus} range dmg vs 
+            ${compareUnitStats().rangedAttack.enemy.total+compareUnitStats().rangedAttack.enemy.bonus} range dmg`}
+          </p>
+          <p>{`${compareUnitStats().meleeAttack.ally.total+compareUnitStats().meleeAttack.ally.bonus} melee dmg vs 
+            ${compareUnitStats().meleeAttack.enemy.total+compareUnitStats().meleeAttack.enemy.bonus} melee dmg`}
+          </p>
+          <div>
+            <pre>{JSON.stringify(compareSimulation(compareUnitStats, 1, 1), null, 2)}</pre>
+          </div>
+        </>
+      </Show>
+    </div>
+  );
+};
 
 const UnitHeader: Component<{ item?: UnifiedItem<Unit>; civ: civConfig; age: () => number }> = (props) => {
   const [stats] = createResource(
@@ -73,15 +218,6 @@ const UnitHeader: Component<{ item?: UnifiedItem<Unit>; civ: civConfig; age: () 
           </>
         )}
       </Show>
-    </div>
-  );
-};
-
-
-const CompareCard: Component<{ ally: any, enemy: any }> = (props) => {
-  return (
-    <div class="w-48 h-48 shadow-lg aspect-w-1 aspect-h-1 rounded-xl text-xs">
-      <p>{props.ally.name} vs {props.enemy.name}</p>
     </div>
   );
 };
@@ -245,7 +381,7 @@ export const CompareRoute = () => {
       >
       </CompareToolbar>
       <div class="max-w-screen-2xl p-4 mx-auto overflow-x-auto">
-        <div class={`grid grid-cols-${enemyUnitCount()+1} gap-1`}>
+        <div class={`grid grid-cols-${enemyUnitCount()+1} gap-2`}>
           <Show when={!allyUnits.loading && !enemyUnits.loading}>
             <div class="inline-flex rounded-md w-48 h-64 p-1 bg-item-unit">
               <div class="rounded-md w-12 h-12">
@@ -273,17 +409,7 @@ export const CompareRoute = () => {
                   </div>
                   <For each={Object.values(enemyUnits())}>
                     {(enemyUnit) => (
-                      <div class="inline-flex self-start rounded-md w-48 h-64 p-1 bg-item-unit">
-                        <div class="rounded-md w-12 h-12">
-                          <ItemIcon url={allyUnit.icon} />
-                        </div>  
-                        <div class="w-8 h-8">
-                          <p>vs</p>
-                        </div>
-                        <div class="rounded-md w-12 h-12">
-                          <ItemIcon url={enemyUnit.icon} />
-                        </div>
-                      </div>
+                      <CompareCard ally={allyUnit} allyCiv={CIVILIZATIONS[allyCivFilter()]} allyAge={allyAgeFilter} enemy={enemyUnit} enemyCiv={CIVILIZATIONS[enemyCivFilter()]} enemyAge={enemyAgeFilter} />
                     )}
                   </For>
                 </>

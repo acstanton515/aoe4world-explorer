@@ -32,6 +32,18 @@ async function getUnits(units: { classes: string, civAbbr: civAbbr, age : any, u
   return results;
 };
 
+const [simulatorLog, setSimulatorLog] = createSignal("");
+
+type CompareSimulatorResults = {
+  damage: string,
+  dps: string,
+  oneVsone: string,
+  eachSideToWin: string,
+  equalResourceCount: string,
+  fiveTimesEqualResourceCount: string,
+  tenTimesEqualResourceCount: string,
+};
+
 async function getCompareUnitStats(units: { ally: UnifiedItem<Unit>, allyCiv: civConfig, allyAge: () => number, enemy: UnifiedItem<Unit>, enemyCiv: civConfig, enemyAge: () => number}) {
   const allyStats = await getUnitStats(ITEMS.UNITS, units.ally, units.allyCiv);
   const enemyStats = await getUnitStats(ITEMS.UNITS, units.enemy, units.enemyCiv);
@@ -49,58 +61,114 @@ async function getCompareUnitStats(units: { ally: UnifiedItem<Unit>, allyCiv: ci
       "maxRange",
     ];
   
-  return compareProps.reduce((acc, accProp) => {
+  const unitsCalculatedStats = compareProps.reduce((acc, accProp) => {
     const allyStatParts = calculateStatParts(allyStats[accProp], units.allyAge(), { target: units.enemy, decimals: 3 });
     const enemyStatParts = calculateStatParts(enemyStats[accProp], units.enemyAge(), { target: units.ally, decimals: 3 });
     
     acc[accProp] = {diff: allyStatParts.total + allyStatParts.bonus - enemyStatParts.total + enemyStatParts.bonus, ally: allyStatParts, enemy: enemyStatParts };
     return acc;
   }, {} as Record<StatProperty, { diff: number; ally: CalculatedStats; enemy: CalculatedStats }>);
+  
+  const results: CompareSimulatorResults = {
+  damage: 'dmg: ',
+  dps: 'dps: ',
+  oneVsone: '1v1: ',
+  eachSideToWin: 'toWin: ',
+  equalResourceCount: 'eq res: ',
+  fiveTimesEqualResourceCount: '5x eq res: ',
+  tenTimesEqualResourceCount: '10x eq res: ',
+};
+  
+  if (unitsCalculatedStats.rangedAttack.ally.total > 0)
+    results.damage += Math.max(
+      unitsCalculatedStats.rangedAttack.ally.total + 
+      unitsCalculatedStats.rangedAttack.ally.bonus - 
+      unitsCalculatedStats.rangedArmor.enemy.total,
+      1)+' r vs ';
+  else
+    results.damage += Math.max(
+      unitsCalculatedStats.meleeAttack.ally.total + 
+      unitsCalculatedStats.meleeAttack.ally.bonus - 
+      unitsCalculatedStats.meleeArmor.enemy.total,
+      1)+' m vs ';
+  
+  if (unitsCalculatedStats.rangedAttack.enemy.total > 0)
+    results.damage += Math.max(
+      unitsCalculatedStats.rangedAttack.enemy.total + 
+      unitsCalculatedStats.rangedAttack.enemy.bonus - 
+      unitsCalculatedStats.rangedArmor.ally.total,
+      1)+' r ';
+  else
+    results.damage += Math.max(
+      unitsCalculatedStats.meleeAttack.enemy.total + 
+      unitsCalculatedStats.meleeAttack.enemy.bonus - 
+      unitsCalculatedStats.meleeArmor.ally.total,
+      1)+' m ';
+      
+  const oneVsoneResults = compareSimulation(unitsCalculatedStats, 1, 1);
+  
+  if (oneVsoneResults.ally.hitpoints.length && !oneVsoneResults.enemy.hitpoints.length)
+    results.oneVsone += ' W , L';
+  else if (!oneVsoneResults.ally.hitpoints.length && oneVsoneResults.enemy.hitpoints.length)
+    results.oneVsone += ' L , W';
+  
+  //does not account for tie game
+  let allyToWin = 1;
+  while (!compareSimulation(unitsCalculatedStats, allyToWin, 1).ally.hitpoints.length && allyToWin < 50 )
+    allyToWin += 1;
+  let enemyToWin = 1;
+  while (!compareSimulation(unitsCalculatedStats, 1, enemyToWin).enemy.hitpoints.length && enemyToWin < 50)
+    enemyToWin += 1;
+  
+  results.eachSideToWin += allyToWin + ':1 , 1:' + enemyToWin;
+    
+  
+  return results;
 };
 
-function moveSimulation(time: number, gameTick: number, compareUnitStats: any, allyUnits: UnitSim, enemyUnits: UnitSim, simLog: string[]) {
+function moveSimulation(time: number, gameTick: number, unitsCalculatedStats: any, allyUnits: UnitSim, enemyUnits: UnitSim, simLog: string[]) {
   let doesAllyMove = false;
   let doesEnemyMove = false;
   
   //check if ally and enemy need to move
-  if (Math.abs(allyUnits.position - enemyUnits.position) >= compareUnitStats().maxRange[allyUnits['unit']].total)
+  if (Math.abs(allyUnits.position - enemyUnits.position) >= unitsCalculatedStats.maxRange[allyUnits['unit']].total)
     doesAllyMove = true; 
-  if (Math.abs(enemyUnits.position - allyUnits.position) >= compareUnitStats().maxRange[enemyUnits['unit']].total)
+  if (Math.abs(enemyUnits.position - allyUnits.position) >= unitsCalculatedStats.maxRange[enemyUnits['unit']].total)
     doesEnemyMove = true; 
   
   //move
   if (doesAllyMove)
-    allyUnits.position += gameTick * compareUnitStats().moveSpeed[allyUnits['unit']].total;
+    allyUnits.position += gameTick * unitsCalculatedStats.moveSpeed[allyUnits['unit']].total;
   if (doesEnemyMove)
-    enemyUnits.position -= gameTick * compareUnitStats().moveSpeed[allyUnits['unit']].total;
+    enemyUnits.position -= gameTick * unitsCalculatedStats.moveSpeed[allyUnits['unit']].total;
 };
 
-function attackSimulation(time: number, compareUnitStats: any, attackUnits: UnitSim, defendUnits: UnitSim, simLog: string[]) {
-  if (Math.abs(attackUnits.position - defendUnits.position) <= compareUnitStats().maxRange[attackUnits['unit']].total) {
+function attackSimulation(time: number, unitsCalculatedStats: any, attackUnits: UnitSim, defendUnits: UnitSim, simLog: string[]) {
+  if (Math.abs(attackUnits.position - defendUnits.position) <= unitsCalculatedStats.maxRange[attackUnits['unit']].total) {
     if (attackUnits.moving)
       simLog.push(time + ': ' + attackUnits.unit + ' is now in range to attack ' + defendUnits.unit);
     attackUnits.moving = false; //does this need to be here
-    if ((time-attackUnits.lastAttackTime) >= compareUnitStats().attackSpeed[attackUnits['unit']].total) {
+    if ((time-attackUnits.lastAttackTime) >= unitsCalculatedStats.attackSpeed[attackUnits['unit']].total) {
       attackUnits.lastAttackTime = time;
       //melee or ranged attack
-      if (compareUnitStats().meleeAttack[attackUnits['unit']].total > 0)
+      if (unitsCalculatedStats.meleeAttack[attackUnits['unit']].total > 0)
         attackUnits.hitpoints.forEach((e,i) => {
           //hardcoded 3:1 melee attack ratio
           defendUnits.hitpoints[Math.floor(i/3)%defendUnits.hitpoints.length] -= 
             Math.max(
-              compareUnitStats().meleeAttack[attackUnits['unit']].total + 
-              compareUnitStats().meleeAttack[attackUnits['unit']].bonus - 
-              compareUnitStats().meleeArmor[defendUnits['unit']].total,
+              unitsCalculatedStats.meleeAttack[attackUnits['unit']].total + 
+              unitsCalculatedStats.meleeAttack[attackUnits['unit']].bonus - 
+              unitsCalculatedStats.meleeArmor[defendUnits['unit']].total,
               1);
         });
-      else (compareUnitStats().rangedAttack[attackUnits['unit']].total > 0)
+      else (unitsCalculatedStats.rangedAttack[attackUnits['unit']].total > 0)
         attackUnits.hitpoints.forEach((e,i) => {
           //hardcoded 10:1 range attack ratio
           defendUnits.hitpoints[Math.floor(i/10)%defendUnits.hitpoints.length] -= 
             Math.max(
-              compareUnitStats().rangedAttack[attackUnits['unit']].total + 
-              compareUnitStats().rangedAttack[attackUnits['unit']].bonus - 
-              compareUnitStats().rangedArmor[defendUnits['unit']].total,
+              unitsCalculatedStats.rangedAttack[attackUnits['unit']].total + 
+              unitsCalculatedStats.rangedAttack[attackUnits['unit']].bonus - 
+              unitsCalculatedStats.rangedArmor[defendUnits['unit']].total,
               1);
         });
       simLog.push(time + ': ' + defendUnits.unit + ' units were attacked:' + defendUnits.hitpoints.toString());
@@ -124,7 +192,7 @@ type UnitSim = {
   moving: boolean,
 };
 
-function compareSimulation(compareUnitStats: any, allyUnitCount: number, enemyUnitCount: number) {
+function compareSimulation(unitsCalculatedStats: any, allyUnitCount: number, enemyUnitCount: number) {
 
   let time = 0.0;
   const gameTick = 0.125;
@@ -132,7 +200,7 @@ function compareSimulation(compareUnitStats: any, allyUnitCount: number, enemyUn
 
   const allyUnits: UnitSim = {
     unit: "ally",
-    hitpoints: Array(allyUnitCount).fill(compareUnitStats().hitpoints.ally.total),
+    hitpoints: Array(allyUnitCount).fill(unitsCalculatedStats.hitpoints.ally.total),
     position: 0.0,
     lastAttackTime: 0.0,
     moving: true,
@@ -140,7 +208,7 @@ function compareSimulation(compareUnitStats: any, allyUnitCount: number, enemyUn
 
   const enemyUnits: UnitSim = {
     unit: "enemy",
-    hitpoints: Array(enemyUnitCount).fill(compareUnitStats().hitpoints.enemy.total),
+    hitpoints: Array(enemyUnitCount).fill(unitsCalculatedStats.hitpoints.enemy.total),
     position: 20.0,
     lastAttackTime: 0.0,
     moving: true,
@@ -153,9 +221,9 @@ function compareSimulation(compareUnitStats: any, allyUnitCount: number, enemyUn
   while(timeLimit) {
     if (!allyUnits.hitpoints.length || !enemyUnits.hitpoints.length)
       return { ally: allyUnits, enemy: enemyUnits, time: time, simLog: simLog, timeLimit: false };
-    attackSimulation(time,compareUnitStats, allyUnits, enemyUnits, simLog);
-    attackSimulation(time,compareUnitStats, enemyUnits, allyUnits, simLog);
-    moveSimulation(time,gameTick,compareUnitStats,allyUnits,enemyUnits, simLog);
+    attackSimulation(time,unitsCalculatedStats, allyUnits, enemyUnits, simLog);
+    attackSimulation(time,unitsCalculatedStats, enemyUnits, allyUnits, simLog);
+    moveSimulation(time,gameTick,unitsCalculatedStats,allyUnits,enemyUnits, simLog);
     deathSimulation(time, allyUnits, simLog);
     deathSimulation(time, enemyUnits, simLog);
     time = time + gameTick;
@@ -188,14 +256,8 @@ const CompareCard: Component<{ ally: UnifiedItem<Unit>, allyCiv: civConfig, ally
       </div>
       <Show when={!compareUnitStats.loading}>
         <>
-          <p>{`${compareUnitStats().rangedAttack.ally.total+compareUnitStats().rangedAttack.ally.bonus} range dmg vs 
-            ${compareUnitStats().rangedAttack.enemy.total+compareUnitStats().rangedAttack.enemy.bonus} range dmg`}
-          </p>
-          <p>{`${compareUnitStats().meleeAttack.ally.total+compareUnitStats().meleeAttack.ally.bonus} melee dmg vs 
-            ${compareUnitStats().meleeAttack.enemy.total+compareUnitStats().meleeAttack.enemy.bonus} melee dmg`}
-          </p>
           <div>
-            <pre>{JSON.stringify(compareSimulation(compareUnitStats, 1, 1), null, 2)}</pre>
+            <pre>{Object.values(compareUnitStats()).join('\n')}</pre>
           </div>
         </>
       </Show>
@@ -441,6 +503,9 @@ export const CompareRoute = () => {
               )}
             </For>
           </Show>
+          <div>
+            <pre>{simulatorLog}</pre>
+          </div>
         </div>
       </div>
     </>

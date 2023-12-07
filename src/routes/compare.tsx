@@ -58,15 +58,7 @@ async function getCompareUnitStats(units: { ally: UnifiedItem<Unit>, allyCiv: ci
   }, {} as Record<StatProperty, { diff: number; ally: CalculatedStats; enemy: CalculatedStats }>);
 };
 
-type UnitSim = {
-  unit: string,
-  hitpoints: number[],
-  position: number,
-  lastAttackTime: number,
-  moving: boolean,
-};
-
-function moveSimulation(time: number, gameTick: number, compareUnitStats: any, allyUnits: any, enemyUnits: any) {
+function moveSimulation(time: number, gameTick: number, compareUnitStats: any, allyUnits: UnitSim, enemyUnits: UnitSim, simLog: string[]) {
   let doesAllyMove = false;
   let doesEnemyMove = false;
   
@@ -83,63 +75,96 @@ function moveSimulation(time: number, gameTick: number, compareUnitStats: any, a
     enemyUnits.position -= gameTick * compareUnitStats().moveSpeed[allyUnits['unit']].total;
 };
 
-function attackSimulation(time: number, compareUnitStats: any, attackUnits: any, defendUnits: any) {
+function attackSimulation(time: number, compareUnitStats: any, attackUnits: UnitSim, defendUnits: UnitSim, simLog: string[]) {
   if (Math.abs(attackUnits.position - defendUnits.position) <= compareUnitStats().maxRange[attackUnits['unit']].total) {
+    if (attackUnits.moving)
+      simLog.push(time + ': ' + attackUnits.unit + ' is now in range to attack ' + defendUnits.unit);
     attackUnits.moving = false; //does this need to be here
     if ((time-attackUnits.lastAttackTime) >= compareUnitStats().attackSpeed[attackUnits['unit']].total) {
       attackUnits.lastAttackTime = time;
-      attackUnits.forEach((e,i) => {
-        defendUnits.hitpoints[Math.floor(i/3)%defendUnits.length] -= 
-          Math.max(
-            compareUnitStats().meleeAttack[attackUnits['unit']].total + 
-            compareUnitStats().meleeAttack[attackUnits['unit']].bonus - 
-            compareUnitStats().meleeArmor[defendUnits['unit']].total,
-            1);
-      });
+      //melee or ranged attack
+      if (compareUnitStats().meleeAttack[attackUnits['unit']].total > 0)
+        attackUnits.hitpoints.forEach((e,i) => {
+          //hardcoded 3:1 melee attack ratio
+          defendUnits.hitpoints[Math.floor(i/3)%defendUnits.hitpoints.length] -= 
+            Math.max(
+              compareUnitStats().meleeAttack[attackUnits['unit']].total + 
+              compareUnitStats().meleeAttack[attackUnits['unit']].bonus - 
+              compareUnitStats().meleeArmor[defendUnits['unit']].total,
+              1);
+        });
+      else (compareUnitStats().rangedAttack[attackUnits['unit']].total > 0)
+        attackUnits.hitpoints.forEach((e,i) => {
+          //hardcoded 10:1 range attack ratio
+          defendUnits.hitpoints[Math.floor(i/10)%defendUnits.hitpoints.length] -= 
+            Math.max(
+              compareUnitStats().rangedAttack[attackUnits['unit']].total + 
+              compareUnitStats().rangedAttack[attackUnits['unit']].bonus - 
+              compareUnitStats().rangedArmor[defendUnits['unit']].total,
+              1);
+        });
+      simLog.push(time + ': ' + defendUnits.unit + ' units were attacked:' + defendUnits.hitpoints.toString());
     }
   }
   else
     attackUnits.moving = true; //reset to true??? if add kiting support
 };
 
-function deathSimulation(units: any) {
-  units.hitpoints = units.hitpoints.filter((e) => e <= 0.0);
+function deathSimulation(time: number, units: UnitSim, simLog: string[]) {
+  if (units.hitpoints.filter((e) => e <= 0).length)
+    simLog.push(time + ': ' + units.unit + ' unit(s) died:' + units.hitpoints.filter((e) => e <= 0).toString());
+  units.hitpoints = units.hitpoints.filter((e) => e > 0);
+};
+
+type UnitSim = {
+  unit: string,
+  hitpoints: number[],
+  position: number,
+  lastAttackTime: number,
+  moving: boolean,
 };
 
 function compareSimulation(compareUnitStats: any, allyUnitCount: number, enemyUnitCount: number) {
 
   let time = 0.0;
   const gameTick = 0.125;
+  const simLog: string[] = [];
 
-  let allyUnits: UnitSim = {
+  const allyUnits: UnitSim = {
     unit: "ally",
-    hitpoints: Array(allyUnitCount).fill(50), //compareUnitStats().hitpoints.ally.total
+    hitpoints: Array(allyUnitCount).fill(compareUnitStats().hitpoints.ally.total),
     position: 0.0,
     lastAttackTime: 0.0,
     moving: true,
   };
-  
-  let enemyUnits: UnitSim = {
+
+  const enemyUnits: UnitSim = {
     unit: "enemy",
-    hitpoints: Array(allyUnitCount).fill(50), //compareUnitStats().hitpoints.enemy.total
+    hitpoints: Array(enemyUnitCount).fill(compareUnitStats().hitpoints.enemy.total),
     position: 20.0,
     lastAttackTime: 0.0,
     moving: true,
   };
   
-  while(true) {
-    console.log(allyUnits, enemyUnits)
+  simLog.push(time + ': ' + 'new units: ' + JSON.stringify(allyUnits, null, 1));
+  simLog.push(time + ': ' + 'new units: ' + JSON.stringify(enemyUnits, null, 1));
+  
+  let timeLimit = 60*8;
+  while(timeLimit) {
     if (!allyUnits.hitpoints.length || !enemyUnits.hitpoints.length)
-      return { ally: allyUnits, enemy: enemyUnits, time: time };
-    attackSimulation(time,compareUnitStats, allyUnits, enemyUnits);
-    attackSimulation(time,compareUnitStats, enemyUnits, allyUnits);
-    console.log(allyUnits, enemyUnits)
-    moveSimulation(time,gameTick,compareUnitStats,allyUnits,enemyUnits);
-    console.log(allyUnits, enemyUnits)
-    deathSimulation(allyUnits);
-    deathSimulation(enemyUnits);
+      return { ally: allyUnits, enemy: enemyUnits, time: time, simLog: simLog, timeLimit: false };
+    attackSimulation(time,compareUnitStats, allyUnits, enemyUnits, simLog);
+    attackSimulation(time,compareUnitStats, enemyUnits, allyUnits, simLog);
+    moveSimulation(time,gameTick,compareUnitStats,allyUnits,enemyUnits, simLog);
+    deathSimulation(time, allyUnits, simLog);
+    deathSimulation(time, enemyUnits, simLog);
     time = time + gameTick;
+    timeLimit -= 1;
   }
+  //failsafe return
+  simLog.push(time + ': ' + 'simulation time limit reached');
+  //is it okay to return these objects back to the component// will they get cleaned up if the component is cleaned up?
+  return { ally: allyUnits, enemy: enemyUnits, time: time, simLog: simLog, timeLimit: true };
 };
 
 
